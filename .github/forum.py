@@ -14,15 +14,15 @@ Q = """query($owner: String!, $repo: String!, $after: String) {
     discussions(first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title createdAt updatedAt bodyText upvoteCount isAnswered
+        number title createdAt updatedAt bodyText upvoteCount isAnswered reactionGroups { content reactors { totalCount } }
         category { slug }
         author { login avatarUrl }
         comments(first: 60) {
           totalCount
           nodes {
-            createdAt bodyText isAnswer
+            createdAt bodyText isAnswer upvoteCount reactionGroups { content reactors { totalCount } }
             author { login avatarUrl }
-            replies(first: 60) { nodes { createdAt bodyText author { login avatarUrl } } }
+            replies(first: 60) { nodes { createdAt bodyText upvoteCount reactionGroups { content reactors { totalCount } } author { login avatarUrl } } }
           }
         }
       }
@@ -57,6 +57,17 @@ def when(s):
 def number(n):
     return n if isinstance(n, int) and 0 <= n < 10**9 else 0
 
+KINDS = {"THUMBS_UP", "THUMBS_DOWN", "LAUGH", "HOORAY", "CONFUSED", "HEART", "ROCKET", "EYES"}
+
+def reactions(groups):
+    """only the reactions someone sent, as {kind: count}"""
+    out = {}
+    for g in groups or []:
+        k, n = g.get("content"), number(((g.get("reactors") or {}).get("totalCount")))
+        if k in KINDS and n > 0:
+            out[k] = n
+    return out
+
 repo = ask()
 nodes, page = repo["discussions"]["nodes"], repo["discussions"]["pageInfo"]
 while page["hasNextPage"] and len(nodes) < 300:
@@ -72,15 +83,16 @@ for t in nodes:
     for c in t["comments"]["nodes"]:
         comments.append({
             "author": person(c["author"]), "at": when(c["createdAt"]), "text": text(c["bodyText"], 20000),
-            "answer": bool(c["isAnswer"]),
-            "replies": [{"author": person(r["author"]), "at": when(r["createdAt"]), "text": text(r["bodyText"], 20000)}
+            "answer": bool(c["isAnswer"]), "votes": number(c["upvoteCount"]), "reactions": reactions(c["reactionGroups"]),
+            "replies": [{"author": person(r["author"]), "at": when(r["createdAt"]), "text": text(r["bodyText"], 20000),
+                         "votes": number(r["upvoteCount"]), "reactions": reactions(r["reactionGroups"])}
                         for r in c["replies"]["nodes"]],
         })
     cat = (t["category"] or {}).get("slug") or ""
     topics.append({
         "number": number(t["number"]), "title": text(t["title"], 300), "category": cat if slug.match(cat) else "",
         "author": person(t["author"]), "created": when(t["createdAt"]), "updated": when(t["updatedAt"]),
-        "text": text(t["bodyText"], 40000), "votes": number(t["upvoteCount"]), "answered": bool(t["isAnswered"]),
+        "text": text(t["bodyText"], 40000), "votes": number(t["upvoteCount"]), "reactions": reactions(t["reactionGroups"]), "answered": bool(t["isAnswered"]),
         "replies": number(t["comments"]["totalCount"]), "comments": comments,
     })
 
