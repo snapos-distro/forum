@@ -1,0 +1,43 @@
+name: Forum
+
+# Copies the discussions into forum.json on the forum-data branch, which the
+# website reads. Posts are only read from the API and written as JSON: no
+# text from a post ever reaches a shell command.
+on:
+  discussion:
+  discussion_comment:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  discussions: read
+
+concurrency:
+  group: forum
+  cancel-in-progress: false
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the discussions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/forum.py > "$RUNNER_TEMP/forum.json"
+      - name: Keep them on the forum-data branch
+        run: |
+          if git ls-remote --exit-code origin forum-data >/dev/null; then
+            git fetch -q origin forum-data
+            git worktree add -q data -B forum-data origin/forum-data
+          else
+            git worktree add -q --orphan -b forum-data data
+          fi
+          cp "$RUNNER_TEMP/forum.json" data/forum.json
+          cd data
+          git add forum.json
+          git diff --cached --quiet && exit 0
+          git -c user.name="SnapOS forum" -c user.email= commit -q -m "Forum data"
+          git push -q origin forum-data
