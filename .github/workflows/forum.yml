@@ -7,7 +7,7 @@ on:
   discussion:
   discussion_comment:
   schedule:
-    - cron: "17 4 * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
